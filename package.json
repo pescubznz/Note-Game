@@ -1,1 +1,15 @@
-{"name":"scriptoria","version":"0.1.0","private":true,"scripts":{"dev":"node server.js","start":"node server.js","check":"node --check game.js && node --check server.js"}}
+{
+  "name": "scriptoria",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "check": "node --check world.js && node --check game.js && node --check server.js",
+    "test": "node --test tests/terrain.test.js",
+    "test:browser": "node tests/browser.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
