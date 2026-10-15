@@ -4,7 +4,7 @@ const path = require('node:path');
 const root = __dirname;
 http.createServer((req,res)=>{
   const route = req.url.split('?')[0];
-  const allowed = {'/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/game.js': 'game.js', '/world.js': 'world.js'};
+  const allowed = {'/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/game.js': 'game.js', '/world.js': 'world.js', '/enemies.js': 'enemies.js'};
   if (!allowed[route]) { res.writeHead(404); return res.end('Not found'); }
   const file = path.join(root, allowed[route]);
   if (!file.startsWith(root + path.sep)) { res.writeHead(403); return res.end(); }

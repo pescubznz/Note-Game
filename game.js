@@ -24,10 +24,10 @@ if (!worlds.length) {
   worlds.push(initial); activeId = initial.id;
 }
 let world = worlds.find(w => w.id === activeId) || worlds[0];
-let terrain, player, defeated;
+let terrain, player, defeated, enemies;
 let camera = 0, cameraY = 0, paused = false, lastTime = 0, time = 0;
 let atVillage = false, selectedNote = null, sound = false, audio;
-let bullets = [], particles = [];
+let bullets = [], hostileBullets = [], particles = [];
 const keys = new Set();
 const pressed = new Set();
 const palette = [
@@ -59,9 +59,11 @@ function loadWorld(next) {
   const water = terrain.waterAt(player.x + 12);
   if (water) { player.y = water.level - 24; player.ground = false; player.swimming = true; }
   defeated = new Set(world.defeated);
-  bullets = []; particles = []; keys.clear(); pressed.clear();
+  enemies = ScriptoriaEnemies.create(terrain, world, defeated);
+  bullets = []; hostileBullets = []; particles = []; keys.clear(); pressed.clear();
   camera = Math.max(0, player.x - Math.min(330, viewWidth * .3));
   cameraY = clamp(player.y + 40 - 400, -260, 110);
+  enemies.sync(camera, viewWidth);
   atVillage = isAtScriptorium();
   paused = false;
   $('pauseBtn').textContent = 'Ⅱ';
@@ -76,6 +78,7 @@ function toast(message) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').style.display = 'none', 3000);
 }
 function save() {
+  enemies.save();
   world.x = player.x; world.hp = player.hp; world.maxX = Math.max(world.maxX, player.x); activeId = world.id;
   try {
     localStorage.setItem(STORAGE, JSON.stringify({ worlds, activeId }));
@@ -114,25 +117,51 @@ function character(x, y) {
   if (player.muzzle > 0) { rect(46, 17, 9, 10, '#f7d777'); rect(49, 20, 12, 4, '#fff1b3'); }
   ctx.restore();
 }
-function enemyAt(id) {
-  const base = id * 210 + 230;
-  return { id, x: base + Math.sin(time * .9 + id) * 25, type: rand(id, 5) > .65 ? 'bandit' : 'boar' };
-}
-function enemyActive(e) {
-  const settlement = nearestVillage(e.x);
-  return !defeated.has(e.id) && Math.abs(e.x - settlement.x) > 250 && !terrain.waterAt(e.x);
-}
 function enemyDraw(e) {
-  const x = e.x - camera, y = ground(e.x);
+  const spec = ScriptoriaEnemies.TYPES[e.type], x = e.x - camera;
+  const feet = e.y + spec.height, stride = Math.sin(e.age * 12) * 2;
+  if (e.type === 'bandit' && e.state === 'windup') {
+    ctx.save(); ctx.strokeStyle = '#ed9b7c88'; ctx.lineWidth = 1; ctx.setLineDash([5, 6]);
+    ctx.beginPath(); ctx.moveTo(x + e.dir * 20, e.y + 22); ctx.lineTo(e.aimX - camera, e.aimY); ctx.stroke(); ctx.restore();
+  }
+  ctx.save(); ctx.translate(Math.round(x), Math.round(feet)); ctx.scale(e.dir, 1);
   if (e.type === 'bandit') {
-    rect(x - 7, y - 29, 14, 20, '#775d4c'); rect(x - 6, y - 42, 13, 13, '#c39672');
-    rect(x - 8, y - 44, 17, 8, '#574c3d'); rect(x - 9, y - 34, 18, 5, '#784934');
-    rect(x - 7, y - 10, 5, 10, '#403f37'); rect(x + 3, y - 10, 5, 10, '#403f37');
-    rect(x + 11, y - 27, 3, 25, '#8e8d7a');
+    rect(-8, -29, 16, 19, '#775d4c'); rect(-6, -42, 13, 13, '#c39672');
+    rect(-9, -45, 17, 7, '#574c3d'); rect(-11, -39, 24, 3, '#433e35');
+    rect(-8, -31, 17, 5, '#a25d49'); rect(4, -35, 2, 3, '#242b25');
+    rect(-7, -10 + stride, 5, 10 - stride, '#403f37'); rect(3, -10 - stride, 5, 10 + stride, '#403f37');
+    rect(4, -24, 12, 5, '#704c32'); rect(12, -25, 18, 4, '#3d474b'); rect(9, -20, 5, 6, '#b38d6f');
+    if (e.muzzle > 0) { rect(31, -28, 10, 10, '#f4bc76'); rect(34, -25, 13, 4, '#ffedb4'); }
+  } else if (e.type === 'bat') {
+    const wing = Math.sin(e.age * 18) * 5;
+    rect(-8, -17, 16, 16, '#57465d'); rect(-6, -22, 4, 7, '#705e7d'); rect(3, -22, 4, 7, '#705e7d');
+    rect(-24, -15 + wing, 17, 7, '#7c6890'); rect(-31, -21 + wing, 10, 7, '#69577e');
+    rect(7, -15 - wing, 17, 7, '#7c6890'); rect(21, -21 - wing, 10, 7, '#69577e');
+    rect(-5, -14, 3, 3, '#f0c879'); rect(3, -14, 3, 3, '#f0c879'); rect(-2, -5, 5, 3, '#e1d8b9');
+  } else if (e.type === 'stoneback') {
+    rect(-22, -23, 43, 17, '#666d61'); rect(-17, -34, 32, 21, '#83918b');
+    rect(-13, -38, 12, 11, '#a6afa0'); rect(2, -35, 11, 12, '#a6afa0');
+    rect(-19, -25, 15, 9, '#596b69'); rect(0, -24, 15, 9, '#596b69');
+    rect(17, -21, 15, 15, '#65745e'); rect(25, -18, 3, 3, '#edbc74');
+    rect(-17, -8 + stride, 8, 8 - stride, '#404e43'); rect(11, -8 - stride, 8, 8 + stride, '#404e43');
+  } else if (e.type === 'wolf') {
+    rect(-17, -22, 33, 15, '#8d9993'); rect(10, -27, 17, 16, '#a3afa4');
+    rect(21, -18, 12, 7, '#b9bda9'); rect(14, -32, 5, 8, '#697d7b'); rect(23, -24, 3, 3, '#ebbc73');
+    rect(-29, -24, 15, 7, '#a3afa4'); rect(-32, -29, 7, 8, '#a3afa4');
+    rect(-13, -9 + stride, 5, 9 - stride, '#586a66'); rect(10, -9 - stride, 5, 9 + stride, '#586a66');
   } else {
-    rect(x - 15, y - 22, 30, 17, '#716758'); rect(x + 12, y - 19, 12, 13, '#827160');
-    rect(x - 12, y - 8, 5, 8, '#3e3c34'); rect(x + 7, y - 8, 5, 8, '#3e3c34');
-    rect(x + 18, y - 17, 3, 3, '#dfb587'); rect(x + 21, y - 7, 4, 4, '#efe0b6'); rect(x + 12, y - 25, 5, 8, '#564f45');
+    rect(-15, -22, 30, 17, '#716758'); rect(12, -19, 12, 13, '#827160');
+    rect(-12, -8 + stride, 5, 8 - stride, '#3e3c34'); rect(7, -8 - stride, 5, 8 + stride, '#3e3c34');
+    rect(18, -17, 3, 3, '#dfb587'); rect(21, -7, 4, 4, '#efe0b6'); rect(12, -25, 5, 8, '#564f45');
+  }
+  if (e.flash > 0) { ctx.globalAlpha = .45; rect(-spec.width / 2, -spec.height, spec.width, spec.height, '#fff4d8'); }
+  ctx.restore();
+  if (e.alert > 0 || e.hp < spec.hp || e.state === 'windup') {
+    rect(x - 18, e.y - 12, 36, 4, '#292f2b'); rect(x - 17, e.y - 11, 34 * e.hp / spec.hp, 2, '#dc9875');
+  }
+  if (e.state === 'windup') {
+    ctx.fillStyle = '#ffdb8b'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(e.type === 'bandit' ? 'AIMING' : '!', x, e.y - 19); ctx.textAlign = 'left';
   }
 }
 function drawBackground(p) {
@@ -193,8 +222,8 @@ function render() {
     rect(x - 45, 416, 180, 5, '#ae9e75'); rect(x + 91, 368, 4, 48, '#685946');
     rect(x + 83, 368, 20, 5, '#685946'); rect(x + 87, 373, 12, 17, '#efd49a');
   }
-  for (let id = Math.max(0, Math.floor(camera / 210) - 1); id < Math.ceil((camera + viewWidth) / 210); id++) {
-    const e = enemyAt(id); if (enemyActive(e)) enemyDraw(e);
+  for (const e of enemies.active()) {
+    if (e.x >= camera - 70 && e.x <= camera + viewWidth + 70) enemyDraw(e);
   }
   for (const particle of particles) { ctx.globalAlpha = particle.life / particle.maxLife; rect(particle.x - camera, particle.y, particle.size, particle.size, particle.color); }
   ctx.globalAlpha = 1;
@@ -202,6 +231,11 @@ function render() {
   for (const shot of bullets) {
     rect(shot.x - camera - shot.direction * 9, shot.y, 10, 3, '#f7df97');
     rect(shot.x - camera, shot.y, 4, 3, '#fff4c7');
+  }
+  for (const shot of hostileBullets) {
+    ctx.strokeStyle = '#ee9972'; ctx.lineWidth = 3; ctx.beginPath();
+    ctx.moveTo(shot.x - camera - shot.vx * .025, shot.y - shot.vy * .025); ctx.lineTo(shot.x - camera, shot.y); ctx.stroke();
+    rect(shot.x - camera - 2, shot.y - 2, 4, 4, '#ffe2a1');
   }
   // Water is foreground geometry: the submerged part of the traveler is tinted.
   for (let col = first; col <= last; col++) {
@@ -260,11 +294,12 @@ function updateBullets(dt) {
     for (let step = 0; step < steps && shot.life > 0; step++) {
       shot.x += distance / steps;
       if (shot.y >= ground(shot.x)) { shot.life = 0; burst(shot.x, shot.y, '#c4ad83', 3); break; }
-      for (let id = Math.max(0, Math.floor((shot.x - 230) / 210) - 1); id <= Math.floor((shot.x - 230) / 210) + 1; id++) {
-        const e = enemyAt(id), floor = ground(e.x), height = e.type === 'bandit' ? 44 : 25;
-        if (enemyActive(e) && Math.abs(shot.x - e.x) < 24 && shot.y >= floor - height && shot.y <= floor) {
-          defeated.add(id); world.defeated.push(id); shot.life = 0; player.hp = Math.min(5, player.hp + 1);
-          burst(e.x, floor - 18, '#d8c591'); beep(340, .06); break;
+      for (const e of enemies.active()) {
+        const spec = ScriptoriaEnemies.TYPES[e.type];
+        if (Math.abs(shot.x - e.x) < spec.width / 2 + 2 && shot.y >= e.y && shot.y <= e.y + spec.height) {
+          const hit = enemies.hit(e.id); shot.life = 0;
+          if (hit.killed) player.hp = Math.min(5, player.hp + 1);
+          burst(shot.x, shot.y, hit.killed ? '#d8c591' : '#b1bdb3', hit.killed ? 7 : 3); beep(hit.killed ? 340 : 220, .06); break;
         }
       }
     }
@@ -274,9 +309,30 @@ function updateBullets(dt) {
 function respawn() {
   player.x = world.checkpoint || 80; player.y = ground(player.x + 12) - 40;
   player.vx = player.vy = 0; player.hp = 5; player.invincible = 1.5;
-  player.roll = 0; player.ground = true; player.swimming = false; bullets = [];
+  player.roll = 0; player.ground = true; player.swimming = false; bullets = []; hostileBullets = [];
   camera = Math.max(0, player.x - Math.min(330, viewWidth * .3)); cameraY = clamp(player.y + 40 - 400, -260, 110);
   toast('A fresh start at your last resting place. Your notes are safe.');
+}
+function hurtPlayer(damage, sourceX) {
+  if (player.invincible > 0 || enemies.safe(player.x + 12)) return false;
+  player.hp -= damage; player.invincible = 1.15; player.vy = -200;
+  player.vx = sourceX > player.x + 12 ? -180 : 180;
+  beep(90, .14); if (player.hp <= 0) respawn();
+  return true;
+}
+function updateHostileBullets(dt) {
+  for (const shot of hostileBullets) {
+    shot.life -= dt;
+    const steps = Math.max(1, Math.ceil(Math.hypot(shot.vx, shot.vy) * dt / 4));
+    for (let i = 0; i < steps && shot.life > 0; i++) {
+      shot.x += shot.vx * dt / steps; shot.y += shot.vy * dt / steps;
+      if (shot.y >= ground(shot.x) || enemies.safe(shot.x)) { shot.life = 0; break; }
+      if (shot.x >= player.x - 2 && shot.x <= player.x + 26 && shot.y >= player.y && shot.y <= player.y + 40) {
+        shot.life = 0; hurtPlayer(1, shot.x - shot.vx * .05); break;
+      }
+    }
+  }
+  hostileBullets = hostileBullets.filter(shot => shot.life > 0);
 }
 function update(dt) {
   time += dt;
@@ -309,15 +365,18 @@ function update(dt) {
   if (player.y + 40 >= floor && player.vy >= 0) { player.y = floor - 40; player.vy = 0; player.ground = true; }
   else player.ground = false;
   if (keys.has('p') || pressed.has('p')) fire();
+  enemies.sync(Math.max(0, player.x - Math.min(330, viewWidth * .3)), viewWidth);
   updateBullets(dt);
-  for (let id = Math.max(0, Math.floor(player.x / 210) - 2); id <= Math.floor(player.x / 210) + 1; id++) {
-    const e = enemyAt(id), floor = ground(e.x), height = e.type === 'bandit' ? 44 : 25;
-    if (!enemyActive(e)) continue;
-    const overlaps = Math.abs(e.x - (player.x + 12)) < 25 && player.y + 40 > floor - height && player.y < floor;
-    if (overlaps && player.invincible <= 0) {
-      player.hp--; player.invincible = 1.15; player.vy = -200; player.vx = e.x > player.x ? -180 : 180;
-      beep(90, .14); if (player.hp <= 0) { respawn(); break; }
-    }
+  const attacks = enemies.update(dt, player);
+  hostileBullets.push(...attacks.shots);
+  updateHostileBullets(dt);
+  for (const strike of attacks.strikes) {
+    burst(strike.x, strike.y - 4, '#b2b8a2', 12);
+    if (Math.abs(player.x + 12 - strike.x) < strike.radius && Math.abs(player.y + 40 - strike.y) < 50) hurtPlayer(strike.damage, strike.x);
+  }
+  for (const e of enemies.active()) {
+    const spec = ScriptoriaEnemies.TYPES[e.type];
+    if (Math.abs(e.x - (player.x + 12)) < spec.width / 2 + 10 && player.y + 40 > e.y && player.y < e.y + spec.height) hurtPlayer(spec.damage, e.x);
   }
   for (const particle of particles) { particle.life -= dt; particle.x += particle.vx * dt; particle.y += particle.vy * dt; particle.vy += 180 * dt; }
   particles = particles.filter(p => p.life > 0);
