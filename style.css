@@ -6,3 +6,5 @@ button:disabled{cursor:not-allowed;opacity:.48}button:disabled:hover{background:
 @media(max-width:480px){header{padding:0 12px;gap:8px}.brand{font-size:13px;letter-spacing:1.4px}.brand-icon{font-size:23px;margin-right:3px}nav button{font-size:10px;padding:7px 5px}#noteCount{margin-left:2px}.heading h1{font-size:26px}.ability-badge{font-size:10px;padding:6px}.biome-badge strong{font-size:11px}.biome-badge small{font-size:9px}.biome-badge>span{font-size:23px}.controls{gap:8px}.quest{top:89px}.journal-layout{gap:13px}dialog{padding:22px}.form-bottom{flex-wrap:wrap}}
 .health div{white-space:nowrap}.quest>span:last-child{white-space:nowrap}
 @media(max-width:480px){.health div{font-size:14px;letter-spacing:2px}.hud{gap:8px}.health,.travel{padding:8px}.hud small{font-size:8px;letter-spacing:1px}.travel strong{font-size:20px}.quest{width:calc(100% - 38px);min-width:0;gap:8px}.quest strong{font-size:10px}.quest .progress{width:135px}.quest>span:last-child{font-size:10px}.biome-badge{max-width:62%}.biome-badge small{line-height:1.4}.prompt{bottom:148px;font-size:10px;padding:10px}}
+
+#game{cursor:crosshair}

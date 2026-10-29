@@ -30,6 +30,7 @@ let atVillage = false, selectedNote = null, sound = false, audio;
 let bullets = [], hostileBullets = [], particles = [];
 const keys = new Set();
 const pressed = new Set();
+const mouseAim = { active: false, clientX: 0, clientY: 0, firing: false };
 const palette = [
   { name: 'The Emerald Wilds', desc: 'Woodland trails and hidden lakes.', sky: '#8ecbc0', haze: '#b3dac3', far: '#6fa799', mount: '#4e8d7d', grass: '#8fb965', edge: '#547c3a', soil: '#694d3b', deep: '#433d32', tree: '#407349', leaf: '#54854b', water: '#407f99', icon: '♧' },
   { name: 'The Amber Expanse', desc: 'Climb the dunes. Find an oasis.', sky: '#e4c999', haze: '#eee0ac', far: '#cbb37c', mount: '#bfa168', grass: '#e9cd87', edge: '#bf9c58', soil: '#ad7b4d', deep: '#775340', tree: '#697e45', leaf: '#849955', water: '#479aa2', icon: '☀' },
@@ -60,7 +61,7 @@ function loadWorld(next) {
   if (water) { player.y = water.level - 24; player.ground = false; player.swimming = true; }
   defeated = new Set(world.defeated);
   enemies = ScriptoriaEnemies.create(terrain, world, defeated);
-  bullets = []; hostileBullets = []; particles = []; keys.clear(); pressed.clear();
+  bullets = []; hostileBullets = []; particles = []; keys.clear(); pressed.clear(); mouseAim.firing = false;
   camera = Math.max(0, player.x - Math.min(330, viewWidth * .3));
   cameraY = clamp(player.y + 40 - 400, -260, 110);
   enemies.sync(camera, viewWidth);
@@ -109,14 +110,19 @@ function character(x, y) {
   rect(3, 15, 18, 15, '#b18c50'); rect(0, 17, 7, 14, '#576744'); rect(8, 16, 7, 14, '#d1b879');
   rect(6, 4, 17, 13, '#e0b08a'); rect(3, 3, 20, 6, '#604638'); rect(7, 0, 13, 5, '#604638');
   rect(18, 9, 2, 3, '#292f29'); rect(10, 16, 13, 4, '#63806a');
-  // A wooden rifle stock, steel barrel, grip, and a brief muzzle flash.
+  ctx.restore();
+  // Rotate the rifle independently of walking direction, keeping its stock upright.
+  const aim = rifleAim();
+  ctx.save(); ctx.translate(x + 12, y + 22); ctx.rotate(aim.angle);
+  if (aim.dx < 0) ctx.scale(1, -1);
   const recoil = player.muzzle > 0 ? -2 : 0;
-  rect(14 + recoil, 22, 12, 5, '#70523a'); rect(24 + recoil, 20, 22, 4, '#414c50');
-  rect(37 + recoil, 19, 3, 2, '#252d30'); rect(23 + recoil, 24, 4, 6, '#554531');
-  rect(20, 25, 6, 4, '#e0b08a');
-  if (player.muzzle > 0) { rect(46, 17, 9, 10, '#f7d777'); rect(49, 20, 12, 4, '#fff1b3'); }
+  ctx.translate(recoil, 0);
+  rect(-5, 0, 15, 5, '#70523a'); rect(8, -2, 20, 4, '#414c50');
+  rect(22, -4, 3, 2, '#252d30'); rect(5, 3, 4, 6, '#554531'); rect(1, 4, 6, 4, '#e0b08a');
+  if (player.muzzle > 0) { rect(28, -5, 9, 10, '#f7d777'); rect(31, -2, 12, 4, '#fff1b3'); }
   ctx.restore();
 }
+
 function enemyDraw(e) {
   const spec = ScriptoriaEnemies.TYPES[e.type], x = e.x - camera;
   const feet = e.y + spec.height, stride = Math.sin(e.age * 12) * 2;
@@ -229,8 +235,9 @@ function render() {
   ctx.globalAlpha = 1;
   if (player.roll > 0 || player.invincible <= 0 || Math.floor(time * 12) % 2 === 0) character(player.x - camera, player.y);
   for (const shot of bullets) {
-    rect(shot.x - camera - shot.direction * 9, shot.y, 10, 3, '#f7df97');
-    rect(shot.x - camera, shot.y, 4, 3, '#fff4c7');
+    ctx.save(); ctx.translate(shot.x - camera, shot.y);
+    ctx.rotate(Math.atan2(shot.vy || 0, shot.vx ?? shot.direction * 820));
+    rect(-10, -1, 10, 3, '#f7df97'); rect(0, -1, 4, 3, '#fff4c7'); ctx.restore();
   }
   for (const shot of hostileBullets) {
     ctx.strokeStyle = '#ee9972'; ctx.lineWidth = 3; ctx.beginPath();
@@ -259,11 +266,26 @@ function burst(x, y, color, count = 7) {
   for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random() - .5) * 110, vy: -Math.random() * 95,
     life: .3, maxLife: .3, size: 2 + i % 3, color });
 }
+function rifleAim() {
+  if (!mouseAim.active) return { dx: player.facing, dy: 0, angle: player.facing < 0 ? Math.PI : 0 };
+  const bounds = canvas.getBoundingClientRect();
+  const x = (mouseAim.clientX - bounds.left) / bounds.width * viewWidth + camera;
+  const y = (mouseAim.clientY - bounds.top) / bounds.height * canvas.height + Math.round(cameraY);
+  const dx = x - (player.x + 12), dy = y - (player.y + 22), length = Math.hypot(dx, dy);
+  if (length < 1) return { dx: player.facing, dy: 0, angle: player.facing < 0 ? Math.PI : 0 };
+  return { dx: dx / length, dy: dy / length, angle: Math.atan2(dy, dx) };
+}
 function fire() {
   if (player.shotCooldown > 0 || player.roll > 0) return;
   player.shotCooldown = .3; player.muzzle = .065;
-  bullets.push({ x: player.x + 12 + player.facing * 26, y: player.y + 22, direction: player.facing, life: .85 });
-  player.vx -= player.facing * 20;
+  const aim = rifleAim();
+  // Check the path to the muzzle so a barrel poking into a slope cannot fire through it.
+  for (let d = 0; d <= 28; d += 2) {
+    const x = player.x + 12 + aim.dx * d, y = player.y + 22 + aim.dy * d;
+    if (y >= ground(x)) { burst(x, y, '#c4ad83', 3); return; }
+  }
+  bullets.push({ x: player.x + 12 + aim.dx * 28, y: player.y + 22 + aim.dy * 28, vx: aim.dx * 820, vy: aim.dy * 820, life: .85 });
+  player.vx -= aim.dx * 20;
   beep(100, .06);
 }
 function startRoll() {
@@ -289,10 +311,10 @@ function moveHorizontal(distance) {
 function updateBullets(dt) {
   for (const shot of bullets) {
     shot.life -= dt;
-    const distance = shot.direction * 820 * dt;
-    const steps = Math.max(1, Math.ceil(Math.abs(distance) / 5));
+    shot.vx ??= shot.direction * 820; shot.vy ??= 0;
+    const steps = Math.max(1, Math.ceil(Math.hypot(shot.vx, shot.vy) * dt / 5));
     for (let step = 0; step < steps && shot.life > 0; step++) {
-      shot.x += distance / steps;
+      shot.x += shot.vx * dt / steps; shot.y += shot.vy * dt / steps;
       if (shot.y >= ground(shot.x)) { shot.life = 0; burst(shot.x, shot.y, '#c4ad83', 3); break; }
       for (const e of enemies.active()) {
         const spec = ScriptoriaEnemies.TYPES[e.type];
@@ -364,7 +386,7 @@ function update(dt) {
   const floor = ground(player.x + 12);
   if (player.y + 40 >= floor && player.vy >= 0) { player.y = floor - 40; player.vy = 0; player.ground = true; }
   else player.ground = false;
-  if (keys.has('p') || pressed.has('p')) fire();
+  if (keys.has('p') || pressed.has('p') || mouseAim.firing || pressed.has('mouseFire')) fire();
   enemies.sync(Math.max(0, player.x - Math.min(330, viewWidth * .3)), viewWidth);
   updateBullets(dt);
   const attacks = enemies.update(dt, player);
@@ -417,7 +439,7 @@ function beep(freq, duration) {
     osc.connect(gain); gain.connect(audio.destination); osc.start(); osc.stop(audio.currentTime + duration);
   } catch {}
 }
-function clearInput() { keys.clear(); pressed.clear(); }
+function clearInput() { keys.clear(); pressed.clear(); mouseAim.firing = false; }
 function togglePause() { paused = !paused; $('pauseBtn').textContent = paused ? '▶' : 'Ⅱ'; clearInput(); }
 function pressKey(key) { if (!keys.has(key)) pressed.add(key); keys.add(key); }
 document.addEventListener('keydown', e => {
@@ -434,9 +456,23 @@ document.addEventListener('visibilitychange', () => { clearInput(); save(); });
 window.addEventListener('beforeunload', save); setInterval(save, 3000);
 $('pauseBtn').onclick = togglePause;
 $('soundBtn').onclick = () => { sound = !sound; $('soundBtn').textContent = sound ? 'Sound on' : 'Sound off'; beep(500, .1); };
+window.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+  mouseAim.active = true; mouseAim.clientX = e.clientX; mouseAim.clientY = e.clientY;
+});
+canvas.addEventListener('pointerdown', e => {
+  if ((e.pointerType !== 'mouse' && e.pointerType !== 'pen') || e.button !== 0 || paused || document.querySelector('dialog[open]')) return;
+  e.preventDefault(); canvas.focus();
+  mouseAim.active = true; mouseAim.clientX = e.clientX; mouseAim.clientY = e.clientY;
+  mouseAim.firing = true; pressed.add('mouseFire');
+});
+window.addEventListener('pointerup', e => { if (e.button === 0) mouseAim.firing = false; });
+window.addEventListener('pointercancel', () => { mouseAim.firing = false; pressed.delete('mouseFire'); });
+document.addEventListener('pointerleave', () => { mouseAim.firing = false; pressed.delete('mouseFire'); });
 for (const button of document.querySelectorAll('[data-key]')) {
   button.addEventListener('pointerdown', e => {
     e.preventDefault(); button.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch') mouseAim.active = false;
     if (!paused && !document.querySelector('dialog[open]')) pressKey(button.dataset.key);
   });
   button.addEventListener('pointerup', () => keys.delete(button.dataset.key));

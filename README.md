@@ -16,7 +16,8 @@ The server listens on port 3000. Set `PORT` to override it. GitHub Pages serves 
 
 - A/D or left/right arrows: accelerate, move, and change facing direction.
 - Space/W/up arrow: jump. Hold for a higher jump; release for a short hop. Hold in water to paddle and jump toward the shore.
-- P: fire the rifle in the direction you face. Hold for repeated shots. Bullets collide with terrain and enemies.
+- Mouse: aim the rifle at the cursor, independently of walking direction.
+- Left-click in the game or P: fire toward the cursor. Hold either for repeated shots. Mobile fire controls retain direction-based shooting. Bullets collide with terrain and enemies.
 - E: dodge roll on land. A roll lasts 0.32 seconds, grants 0.28 seconds of invulnerability, and has a 1.1-second cooldown. Hold does not retrigger it.
 - R: enter a nearby scriptorium.
 - Escape: pause.
@@ -72,6 +73,6 @@ In a second terminal:
 npm run test:browser
 ```
 
-The browser tests cover journal access, real P/E key events, acceleration, roll immunity and cooldown, rifle hits, terrain collision, floating, note persistence, cross-biome traversal, mobile layout, and migration of old saves. The hostile-combat browser suite verifies gunner projectiles, player damage, rolling through enemy fire, terrain and village protection, multi-hit enemies, wound persistence, and permanent defeats. Tests use a fresh browser profile and do not touch your normal browser saves.
+The browser tests cover journal access, real P/E key events, acceleration, roll immunity and cooldown, rifle hits, terrain collision, floating, note persistence, cross-biome traversal, mobile layout, and migration of old saves. The aiming browser suite verifies click/P firing, held fire, cursor coordinates at multiple camera positions and screen sizes, airborne hits, and touch fallback. The hostile-combat browser suite verifies gunner projectiles, player damage, rolling through enemy fire, terrain and village protection, multi-hit enemies, wound persistence, and permanent defeats. Tests use a fresh browser profile and do not touch your normal browser saves.
 
 In the cloud workspace, Chromium is already installed. Run with `BROWSER_PATH=/usr/bin/chromium`. Set `BASE_URL` if the server uses a different port and optionally set `SCREENSHOTS` to an existing output directory.
